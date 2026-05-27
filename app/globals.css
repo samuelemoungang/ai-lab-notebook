@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+body {
+  background-color: #0d1117;
+  color: #e6edf3;
+}
+
+/* Monaco editor container */
+.monaco-container {
+  border-radius: 0 0 0.5rem 0.5rem;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #161b22; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* Markdown content inside cells */
+.prose-notebook {
+  @apply text-sm text-notebook-text leading-relaxed;
+}
+.prose-notebook h1 { @apply text-xl font-bold mb-2 mt-4; }
+.prose-notebook h2 { @apply text-lg font-semibold mb-2 mt-3; }
+.prose-notebook h3 { @apply text-base font-semibold mb-1 mt-2; }
+.prose-notebook p  { @apply mb-2; }
+.prose-notebook code {
+  @apply bg-notebook-border/50 text-emerald-400 px-1 py-0.5 rounded text-xs font-mono;
+}
+.prose-notebook pre {
+  @apply bg-notebook-cell rounded p-3 mb-2 overflow-x-auto;
+}
+.prose-notebook pre code { @apply bg-transparent p-0; }
+.prose-notebook ul { @apply list-disc list-inside mb-2 space-y-1; }
+.prose-notebook ol { @apply list-decimal list-inside mb-2 space-y-1; }
+.prose-notebook table {
+  @apply w-full text-xs border-collapse mb-2;
+}
+.prose-notebook th {
+  @apply border border-notebook-border px-2 py-1 bg-notebook-border/40 font-semibold;
+}
+.prose-notebook td { @apply border border-notebook-border px-2 py-1; }
+.prose-notebook blockquote {
+  @apply border-l-2 border-accent-ai pl-3 italic text-notebook-muted;
+}
+.prose-notebook a  { @apply text-accent-code underline; }
+
+/* Cell left border indicator */
+.cell-border-code  { border-left: 3px solid #1f6feb; }
+.cell-border-ai    { border-left: 3px solid #7c3aed; }
+.cell-border-data  { border-left: 3px solid #d97706; }
+.cell-border-model { border-left: 3px solid #059669; }
+.cell-border-md    { border-left: 3px solid #374151; }
