@@ -1,6 +1,6 @@
 'use client'
 
-import { useReducer, useCallback } from 'react'
+import { useReducer, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Cell, CellType, Notebook as NotebookType } from '@/types/notebook'
 import CodeCell     from './cells/CodeCell'
@@ -67,11 +67,12 @@ function reducer(state: State, action: Action): State {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props {
-  notebook: NotebookType
-  onUpdate?: (cells: Cell[]) => void
+  notebook:       NotebookType
+  onSave?:        (cells: Cell[]) => void
+  onCellsChange?: (cells: Cell[]) => void
 }
 
-export default function Notebook({ notebook }: Props) {
+export default function Notebook({ notebook, onSave, onCellsChange }: Props) {
   const initial: State = {
     cells: notebook.cells.length
       ? notebook.cells
@@ -80,6 +81,21 @@ export default function Notebook({ notebook }: Props) {
   }
 
   const [state, dispatch] = useReducer(reducer, initial)
+
+  // Notify parent when cells change
+  useEffect(() => { onCellsChange?.(state.cells) }, [state.cells, onCellsChange])
+
+  // Ctrl+S → save
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        onSave?.(state.cells)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onSave, state.cells])
 
   const addCell     = useCallback((type: CellType, after?: string, content?: string) =>
     dispatch({ type: 'ADD', cellType: type, after, content }), [])
@@ -93,6 +109,25 @@ export default function Notebook({ notebook }: Props) {
     dispatch({ type: 'RUNNING', id, value: v }), [])
   const insertCode  = useCallback((code: string, after?: string) =>
     addCell('code', after, code), [addCell])
+
+  // ── Focus management for Shift+Enter navigation ──────────────────────────
+  const focusFns = useRef(new Map<string, () => void>())
+  const registerFocus = useCallback((id: string, fn: () => void) => {
+    focusFns.current.set(id, fn)
+  }, [])
+  const focusNextCell = useCallback((id: string) => {
+    const cells = state.cells
+    const idx   = cells.findIndex(c => c.id === id)
+    if (idx === -1) return
+    if (idx < cells.length - 1) {
+      // Focus existing next cell
+      focusFns.current.get(cells[idx + 1].id)?.()
+    } else {
+      // Last cell → create a new code cell after it
+      dispatch({ type: 'ADD', cellType: 'code', after: id })
+      // Focus will auto-register when the new cell mounts
+    }
+  }, [state.cells])
 
   let codeIdx = -1
 
@@ -117,6 +152,8 @@ export default function Notebook({ notebook }: Props) {
                 onOutput={setOutput}
                 running={cell.running}
                 setRunning={setRunning}
+                onRunAndNext={()  => focusNextCell(cell.id)}
+                onRegisterFocus={registerFocus}
               />
             )}
             {cell.type === 'markdown' && (

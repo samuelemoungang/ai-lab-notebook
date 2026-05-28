@@ -95,7 +95,17 @@ export async function getPyodide() {
   })
 
   // Install scientific stack (cached by Pyodide after first load)
-  await _pyodide.loadPackage(['pandas', 'numpy', 'scipy', 'matplotlib'])
+  // Built-in Pyodide packages (compiled for WASM)
+  await _pyodide.loadPackage([
+    'pandas', 'numpy', 'scipy', 'matplotlib',
+    'scikit-learn', 'statsmodels', 'sympy', 'micropip',
+  ])
+
+  // Pure-Python packages via micropip (seaborn depends on matplotlib already loaded)
+  await _pyodide.runPythonAsync(`
+import micropip
+await micropip.install('seaborn')
+`)
 
   // Install harness
   await _pyodide.runPythonAsync(HARNESS)
@@ -108,32 +118,53 @@ export async function getPyodide() {
 }
 
 export async function runCell(code: string): Promise<CellOutput> {
+  // If Jupyter URL is configured, use the remote kernel instead of Pyodide
+  if (process.env.NEXT_PUBLIC_JUPYTER_URL?.trim()) {
+    const { getJupyterKernel } = await import('@/lib/jupyter-kernel')
+    const kernel = await getJupyterKernel()
+    return kernel.runCell(code)
+  }
+
+  // Pyodide (browser-local) path
   const t0  = Date.now()
   const py  = await getPyodide()
 
-  // Escape backticks in code to safely embed in Python string
   const escaped = code.replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"')
-
-  const raw = await py.runPythonAsync(
-    `_run_cell("""${escaped}""")`
-  )
+  const raw = await py.runPythonAsync(`_run_cell("""${escaped}""")`)
 
   const result = JSON.parse(raw) as Omit<CellOutput, 'elapsed'>
   return { ...result, elapsed: Date.now() - t0 }
 }
 
-/** Pass a CSV file content into Python as a string variable `__csv_content__`. */
+/** Load a CSV/TSV file into Python and inject it into the shared notebook namespace. */
 export async function loadFileIntoPython(
   variableName: string,
   csvContent: string
-) {
+): Promise<string> {
   const py = await getPyodide()
   py.globals.set('__csv_raw__', csvContent)
-  await py.runPythonAsync(`
-import pandas as _pd, io as _io
-${variableName} = _pd.read_csv(_io.StringIO(__csv_raw__))
-_nb_globals['${variableName}'] = ${variableName}
-print(f"✓ Loaded '${variableName}' — {len(${variableName})} rows × {len(${variableName}.columns)} columns")
-print(${variableName}.head(3).to_string())
+
+  // sep=None + engine='python' → pandas auto-detects , ; \t etc.
+  const result = await py.runPythonAsync(`
+import pandas as _pd, io as _io, json as _json
+
+try:
+    __df_tmp__ = _pd.read_csv(_io.StringIO(__csv_raw__), sep=None, engine='python')
+    _nb_globals['${variableName}'] = __df_tmp__
+    __out__ = _json.dumps({
+        'ok': True,
+        'rows': len(__df_tmp__),
+        'cols': list(__df_tmp__.columns),
+        'sep':  str(__df_tmp__.columns[0]),   # first col name as hint
+    })
+    del __df_tmp__
+except Exception as _e:
+    __out__ = _json.dumps({'ok': False, 'error': str(_e)})
+
+del __csv_raw__
+__out__
 `)
+
+  py.globals.delete('__csv_raw__')
+  return result
 }

@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { Play, Square, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import type { OnMount } from '@monaco-editor/react'
 import type { Cell } from '@/types/notebook'
 import { runCell } from '@/lib/pyodide-manager'
 
@@ -15,19 +16,25 @@ declare global {
 }
 
 interface Props {
-  cell:     Cell
-  index:    number
-  onChange: (id: string, content: string) => void
-  onOutput: (id: string, output: Cell['output']) => void
-  onDelete: (id: string) => void
-  running:  boolean
+  cell:       Cell
+  index:      number
+  onChange:   (id: string, content: string) => void
+  onOutput:   (id: string, output: Cell['output']) => void
+  onDelete:   (id: string) => void
+  running:    boolean
   setRunning: (id: string, v: boolean) => void
+  onRunAndNext?:      () => void                          // Shift+Enter → run + focus next
+  onRegisterFocus?:   (id: string, fn: () => void) => void  // register focus fn with Notebook
 }
 
 export default function CodeCell({
   cell, index, onChange, onOutput, onDelete, setRunning,
+  onRunAndNext, onRegisterFocus,
 }: Props) {
-  const plotRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const plotRefs  = useRef<Map<string, HTMLDivElement>>(new Map())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const editorRef = useRef<any>(null)
+  const runRef    = useRef<() => void>(() => {})   // stable ref to handleRun
   const [collapsed, setCollapsed] = useState(false)
 
   // Render Plotly figures whenever output changes
@@ -49,12 +56,34 @@ export default function CodeCell({
     })
   }, [cell.output, cell.id])
 
-  async function handleRun() {
+  const handleRun = useCallback(async () => {
     setRunning(cell.id, true)
     onOutput(cell.id, null)
     const output = await runCell(cell.content)
     onOutput(cell.id, output)
     setRunning(cell.id, false)
+  }, [cell.id, cell.content, setRunning, onOutput])
+
+  // Keep runRef stable so Monaco keybinding always calls the latest version
+  useEffect(() => { runRef.current = handleRun }, [handleRun])
+
+  // Register this cell's focus function with the Notebook
+  useEffect(() => {
+    onRegisterFocus?.(cell.id, () => editorRef.current?.focus())
+  }, [cell.id, onRegisterFocus])
+
+  // Monaco mount: register Shift+Enter keybinding
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor
+    editor.addAction({
+      id:           'run-cell-and-advance',
+      label:        'Run Cell and Advance',
+      keybindings:  [monaco.KeyMod.Shift | monaco.KeyCode.Enter],
+      run: () => {
+        runRef.current()
+        onRunAndNext?.()
+      },
+    })
   }
 
   const hasOutput = cell.output !== null
@@ -109,6 +138,7 @@ export default function CodeCell({
             theme="vs-dark"
             value={cell.content}
             onChange={(v: string | undefined) => onChange(cell.id, v ?? '')}
+            onMount={handleEditorMount}
             options={{
               minimap:       { enabled: false },
               fontSize:      13,

@@ -5,13 +5,14 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Bot, Send, Trash2, PlusCircle } from 'lucide-react'
 import type { Cell, AIMessage } from '@/types/notebook'
-import { streamAI, buildSystemPrompt } from '@/lib/ai'
+import { streamAI, buildSystemPrompt, getDefaultConfig } from '@/lib/ai'
+import { useModels } from '@/lib/useModels'
 
 interface Props {
   cell:         Cell
   onChange:     (id: string, content: string) => void
   onDelete:     (id: string) => void
-  onInsertCode: (code: string) => void  // adds a code cell with AI suggestion
+  onInsertCode: (code: string) => void
 }
 
 export default function AICell({ cell, onChange, onDelete, onInsertCode }: Props) {
@@ -20,11 +21,22 @@ export default function AICell({ cell, onChange, onDelete, onInsertCode }: Props
   })
   const [input,     setInput]     = useState(cell.content)
   const [streaming, setStreaming] = useState(false)
+
+  // Model selector — default from env, overridable per cell
+  const defaultModel  = getDefaultConfig().lmstudioModel ?? ''
+  const [model, setModel] = useState(defaultModel)
+  const { models, loading: modelsLoading } = useModels()
+
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Keep model in sync if models load after mount
+  useEffect(() => {
+    if (model === '' && models.length > 0) setModel(models[0].id)
+  }, [models, model])
 
   async function send() {
     if (!input.trim() || streaming) return
@@ -36,23 +48,23 @@ export default function AICell({ cell, onChange, onDelete, onInsertCode }: Props
     setStreaming(true)
 
     let reply = ''
-    const assistantMsg: AIMessage = { role: 'assistant', content: '' }
-    setMessages([...newMessages, assistantMsg])
+    setMessages([...newMessages, { role: 'assistant', content: '' }])
 
     try {
-      const stream = streamAI(newMessages, buildSystemPrompt())
+      const stream = streamAI(newMessages, buildSystemPrompt(), {
+        lmstudioModel: model || undefined,
+      })
       for await (const chunk of stream) {
         reply += chunk
         setMessages([...newMessages, { role: 'assistant', content: reply }])
       }
     } catch (e) {
-      reply = `⚠️ Error: ${e instanceof Error ? e.message : 'Unknown error'}`
+      reply = `⚠️ ${e instanceof Error ? e.message : 'Unknown error'}`
       setMessages([...newMessages, { role: 'assistant', content: reply }])
     }
     setStreaming(false)
   }
 
-  /** Extract first fenced Python code block from a message */
   function extractCode(text: string): string | null {
     const m = text.match(/```python\n([\s\S]*?)```/)
     return m ? m[1].trim() : null
@@ -60,12 +72,41 @@ export default function AICell({ cell, onChange, onDelete, onInsertCode }: Props
 
   return (
     <div className="rounded-lg border border-notebook-border bg-notebook-cell cell-border-ai overflow-hidden">
+
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-notebook-border bg-notebook-bg/40">
         <Bot size={14} className="text-accent-ai" />
         <span className="text-xs px-1.5 py-0.5 rounded bg-accent-ai/20 text-accent-ai">
           AI Assistant
         </span>
+
+        {/* ── Model selector ── */}
+        <div className="ml-2 flex items-center gap-1.5">
+          {modelsLoading ? (
+            <span className="text-xs text-notebook-muted/50 italic">loading models…</span>
+          ) : models.length === 0 ? (
+            <span className="text-xs text-notebook-muted/50 italic">
+              {defaultModel || 'no model'}
+            </span>
+          ) : (
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              disabled={streaming}
+              className="
+                text-xs bg-notebook-bg border border-notebook-border rounded px-1.5 py-0.5
+                text-notebook-muted hover:text-notebook-text
+                focus:outline-none focus:border-accent-ai/60
+                disabled:opacity-50 cursor-pointer
+              "
+            >
+              {models.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         <button
           onClick={() => onDelete(cell.id)}
           className="ml-auto p-1 rounded text-notebook-muted hover:text-red-400"
@@ -98,7 +139,6 @@ export default function AICell({ cell, onChange, onDelete, onInsertCode }: Props
                   {msg.content}
                 </ReactMarkdown>
               </div>
-              {/* Insert code button */}
               {msg.role === 'assistant' && extractCode(msg.content) && (
                 <button
                   onClick={() => onInsertCode(extractCode(msg.content)!)}
