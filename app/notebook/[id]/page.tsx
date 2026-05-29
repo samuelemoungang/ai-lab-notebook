@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Save, ChevronLeft } from 'lucide-react'
 import Notebook       from '@/components/notebook/Notebook'
 import LMStudioStatus from '@/components/LMStudioStatus'
+import KernelStatus    from '@/components/KernelStatus'
 import type { Notebook as NotebookType, Cell } from '@/types/notebook'
-import { loadNotebook, saveNotebook, createNotebook } from '@/lib/storage'
+import { loadNotebook, saveNotebook, createNotebook, toIpynb } from '@/lib/storage'
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function NotebookPage({ params }: { params: { id: string } }) {
@@ -43,6 +44,17 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
     setSaveState('saved')
     setTimeout(() => setSaveState('idle'), 2000)
   }, [notebook])
+
+  // ── Download as .json ─────────────────────────────────────────────────────
+  function handleDownload() {
+    const nb   = notebookRef.current
+    if (!nb) return
+    const slug = nb.name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') || 'notebook'
+    const blob = new Blob([toIpynb(nb)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    Object.assign(document.createElement('a'), { href: url, download: `${slug}.ipynb` }).click()
+    URL.revokeObjectURL(url)
+  }
 
   // ── Title editing ─────────────────────────────────────────────────────────
   function startEditTitle() {
@@ -114,7 +126,17 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
           )}
 
           {/* Provider */}
+          <KernelStatus />
           <LMStudioStatus />
+
+          {/* Download */}
+          <button
+            onClick={handleDownload}
+            title="Download as .json"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs font-medium border-notebook-border text-notebook-muted hover:text-notebook-text hover:border-notebook-border/80 transition-all"
+          >
+            ↓ Download
+          </button>
 
           {/* Save */}
           <button

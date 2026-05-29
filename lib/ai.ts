@@ -172,7 +172,8 @@ ${context?.recentOutput ? `## Last cell output\n\`\`\`\n${context.recentOutput.s
 - **Always reply in English**, regardless of the language the user writes in
 - When writing Python, always use fenced code blocks: \`\`\`python ... \`\`\`
 - Code must work inside the shared Pyodide namespace; do not use pip install or file I/O
-- Available libraries (pre-loaded, no install needed): pandas, numpy, scipy, matplotlib, scikit-learn, statsmodels, sympy, seaborn
+- If running on Jupyter kernel (remote PC): ALL pip packages are available — torch, opencv, transformers, polars, plotly, etc. Use regular imports directly.
+- If running on Pyodide (browser): pre-loaded packages are pandas, numpy, scipy, matplotlib, scikit-learn, statsmodels, sympy, seaborn. For others use: import micropip; await micropip.install('pkg')
 - **Pyodide networking:** urllib, requests and http.client do NOT work in the browser sandbox. To load a remote CSV use: from pyodide.http import open_url then pd.read_csv(open_url("https://...")). For binary files use pyfetch: from pyodide.http import pyfetch; r = await pyfetch(url); data = await r.bytes().
 - For plots: use matplotlib (auto-captured) OR assign \`__fig__ = fig\` for interactive Plotly
 - When suggesting a model, briefly explain: what it models, its parameters, when to use it

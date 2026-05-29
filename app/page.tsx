@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { FlaskConical, Plus, BookOpen, Cpu, BarChart2, Trash2 } from 'lucide-react'
 import type { Notebook, Cell, CellType } from '@/types/notebook'
-import { listNotebooks, deleteNotebook, createNotebook, saveNotebook, importNotebookFromFile } from '@/lib/storage'
+import { listNotebooks, deleteNotebook, createNotebook, saveNotebook, importNotebookFromFile, toIpynb } from '@/lib/storage'
 
 function makeCell(type: CellType, content: string): Cell {
   return { id: crypto.randomUUID(), type, content, output: null, running: false, metadata: {} }
@@ -249,11 +249,6 @@ const TEMPLATES: Array<{ name: string; description: string; icon: React.ReactNod
     icon:        <FlaskConical size={18} className="text-accent-model" />,
   },
   {
-    name:        'Blank Notebook',
-    description: 'Start from scratch.',
-    icon:        <BookOpen size={18} className="text-accent-code" />,
-  },
-  {
     name:        'Numerical Methods',
     description: 'ODE solving, curve fitting, interpolation.',
     icon:        <Cpu size={18} className="text-accent-ai" />,
@@ -300,6 +295,15 @@ export default function HomePage() {
     if (!confirm('Delete this notebook?')) return
     deleteNotebook(id)
     setNotebooks(prev => prev.filter(n => n.id !== id))
+  }
+
+  function handleDownload(e: React.MouseEvent, nb: Notebook) {
+    e.stopPropagation()
+    const slug = nb.name.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') || 'notebook'
+    const blob = new Blob([toIpynb(nb)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    Object.assign(document.createElement('a'), { href: url, download: `${slug}.ipynb` }).click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -385,11 +389,15 @@ export default function HomePage() {
                       {relativeDate(nb.updatedAt)}
                     </span>
                     <button
+                      onClick={e => handleDownload(e, nb)}
+                      title="Download .json"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-notebook-muted hover:text-notebook-text transition-all text-xs"
+                    >
+                      ↓
+                    </button>
+                    <button
                       onClick={e => handleDelete(e, nb.id)}
-                      className="
-                        opacity-0 group-hover:opacity-100 p-1 rounded
-                        text-notebook-muted hover:text-red-400 transition-all
-                      "
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-notebook-muted hover:text-red-400 transition-all"
                     >
                       <Trash2 size={13} />
                     </button>

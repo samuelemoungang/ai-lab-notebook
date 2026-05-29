@@ -96,6 +96,70 @@ export function renameNotebook(id: string, name: string): void {
   if (nb) saveNotebook({ ...nb, name })
 }
 
+// ── Export to .ipynb ──────────────────────────────────────────────────────────
+
+/** Convert our Notebook format to a Jupyter .ipynb v4 JSON string. */
+export function toIpynb(notebook: Notebook): string {
+  function toSource(text: string): string[] {
+    if (!text) return ['']
+    const lines = text.split('\n')
+    return lines.map((l, i) => (i < lines.length - 1 ? l + '\n' : l))
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cells: any[] = []
+
+  for (const cell of notebook.cells) {
+    switch (cell.type) {
+      case 'code':
+        if (cell.content.trim()) cells.push({
+          cell_type: 'code', execution_count: null,
+          metadata: {}, outputs: [], source: toSource(cell.content),
+        })
+        break
+      case 'markdown':
+        if (cell.content.trim()) cells.push({
+          cell_type: 'markdown', metadata: {}, source: toSource(cell.content),
+        })
+        break
+      case 'ai': {
+        let messages: Array<{ role: string; content: string }> = []
+        try { messages = JSON.parse(cell.metadata.messages as string ?? '[]') } catch { /**/ }
+        if (messages.length === 0 && cell.content.trim())
+          messages = [{ role: 'user', content: cell.content }]
+        if (messages.length > 0) {
+          const md = messages
+            .map(m => `**${m.role === 'user' ? '🧑 User' : '🤖 AI'}:** ${m.content}`)
+            .join('\n\n---\n\n')
+          cells.push({ cell_type: 'markdown', metadata: { tags: ['ai'] }, source: toSource(md) })
+        }
+        break
+      }
+      case 'data':
+        if (cell.content.trim()) cells.push({
+          cell_type: 'markdown', metadata: {},
+          source: toSource(`> **Data cell:** variable \`${cell.content}\` loaded from CSV.`),
+        })
+        break
+      case 'model':
+        if (cell.content.trim()) cells.push({
+          cell_type: 'code', execution_count: null,
+          metadata: { tags: ['model'] }, outputs: [], source: toSource(cell.content),
+        })
+        break
+    }
+  }
+
+  return JSON.stringify({
+    nbformat: 4, nbformat_minor: 5,
+    metadata: {
+      kernelspec:    { display_name: 'Python 3', language: 'python', name: 'python3' },
+      language_info: { name: 'python', version: '3.12.0' },
+    },
+    cells,
+  }, null, 2)
+}
+
 // ── Import from file ──────────────────────────────────────────────────────────
 
 /**
